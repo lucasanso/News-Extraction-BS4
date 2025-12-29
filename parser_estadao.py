@@ -1,19 +1,32 @@
 # ---------------------------------------------------------------------------------------------------------------
+
 # Escopo de lib e API
 
-import requests
+import requests                               # Para fazer as requisições do HTML
 from bs4 import BeautifulSoup
 from pprint import pprint
 from datetime import datetime
-import pytz # Python timezone
-import pandas as pd # Tratar e viabilizar armazenamento dos dados 
-import re # Regular Expressions para a validação de cada uma das notícias
+import pytz                                   # Python timezone
+import pandas as pd                           # Tratar e viabilizar armazenamento dos dados 
+import re                                     # Regular Expressions para a validação de cada uma das notícias
 from keywords import KEYWORDS
 from keywords import VALIDATION_KEYWORDS
-from unidecode import unidecode # Para formatar cada texto de cada notícia para tornar mais preciso o uso de RE
-import os
+from unidecode import unidecode               # Para formatar cada texto de cada notícia para tornar mais preciso o uso de RE
+import os                                     # Para verificar existência de arquivo
 
 # ---------------------------------------------------------------------------------------------------------------
+
+# Método que carrega as URLs salvas em accepted_news.csv e unaccepted_news.csv
+def get_all_urls():
+    urls = []
+    for arquivo in ["accepted_news.csv", "unaccepted_news.csv"]:
+        if os.path.exists(arquivo):
+            df = pd.read_csv(arquivo)
+            
+            columns = df['url'].tolist()
+            urls.extend(columns)
+
+    return set(urls)
 
 
 # Classe do crawler (não há parâmetros a serem passados porque não estou usando herança)
@@ -25,6 +38,7 @@ class EstadaoSpider:
         self.noticias_recusadas = []
         self.noticias_salvas = []
         self.lista_urls = list
+        self.noticias_salvas = get_all_urls()
         self.start_requests(self.lista_urls)
 
     # Método que faz a requisição para obter o HTML da página
@@ -33,17 +47,21 @@ class EstadaoSpider:
             response = requests.get(url)
 
             if response.status_code == 200:
-                print(f"Extraindo notícia da url: {url}")
+                if url not in self.noticias_salvas:
+                    print(f"Extraindo notícia da url: {url}")
 
-                self._parser(response.text, url)
+                    self._parser(response.text, url)
                 
+                else:
+                    print(f"[URL] {url} já foi processada. Pulando...")
+                    continue
             else:
-                print(f"Não foi possível acessar a url: {url}.")
+                print(f"Não foi possível acessar a url: {url}")
+                
 
         self.load_news(self.noticias_aceitas)
         self.load_news(self.noticias_recusadas)
         self.print_news(self.noticias_aceitas + self.noticias_recusadas)
-        self.get_all_urls()
 
     # Método que só deve extrair o conteúdo desejado do HTML da notícia: OK
     # Método protected: não deve ser usado fora da classe
@@ -92,10 +110,6 @@ class EstadaoSpider:
         return f"Notícia cuja URL é {url} foi verificada."
     
     # Método para salvar notícia
-    # Do jeito que está aqui, sempre que eu rodar o código, vai sobrescrever o que já tinha...
-    # Ver a biblioteca pandas para conseguir adicionar uma linha de .csv
-    # Ainda tem que chamar aqui o método de conter duplicação
-    # Está salvando as notícias, agora basta inserir a lógica de duplicatas.
     def load_news(self, noticias):
         data_frame = pd.DataFrame(noticias) # transforma a lista de notícias em um dataframe 
 
@@ -105,20 +119,20 @@ class EstadaoSpider:
                 concatenar = pd.concat([data_frame, db])
                 concatenar.to_csv("accepted_news.csv")
 
-                print("Banco já existe! Notícias aceitas adicionadas.")
+                # print("Banco já existe! Notícias aceitas adicionadas.")
             else:
                 data_frame.to_csv("accepted_news.csv")
-                print(f"Banco não estava criado ainda. Notícias aceitas foram inseridas.")
+                # print(f"Banco não estava criado ainda. Notícias aceitas foram inseridas.")
 
         if noticias == self.noticias_recusadas:
             if os.path.exists("unaccepted_news.csv"):
-                print("Banco já existe! Notícias recusadas adicionadas.")
+                # print("Banco já existe! Notícias recusadas adicionadas.")
                 db = pd.read_csv("unaccepted_news.csv")
                 concatenar= pd.concat([data_frame, db])
                 concatenar.to_csv("unaccepted_news.csv")
             else:
                 data_frame.to_csv("unaccepted_news.csv")
-                print("Banco não estava criado ainda. Notícias não aceitas foram inseridas.")
+                # print("Banco não estava criado ainda. Notícias não aceitas foram inseridas.")
 
     # Método que exibe cada uma das notícias de qualquer lista de notícias
     def print_news(self, list_news):
@@ -142,20 +156,7 @@ class EstadaoSpider:
                 activity = p; break
             
         return f"{gang} - {activity}" if (gang and activity) else False
-    
-    # Método que retorna todas as URLs para pular caso já tenha sido percorrida (em conjunto com lógica de evitar duplicação): OK mas pode ser melhorado
-    def get_all_urls(self):
-        df_acc = pd.read_csv("accepted_news.csv")
-        df_una = pd.read_csv("unaccepted_news.csv")
 
-        self.noticias_salvas.extend(df_acc["url"].tolist())
-        self.noticias_salvas.extend(df_una["url"].tolist())
-        
-        for url in self.noticias_salvas:
-            print(url)
-
-        return set(self.noticias_salvas) # Lista de notícias
-    
     # Método que percorre o corpo da notícia buscando pelas gangues: OK
     def search_gangs(self, article):
         GANGS = KEYWORDS["GANGS"] + KEYWORDS["ORGANIZED CRIME"]
